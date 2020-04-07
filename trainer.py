@@ -10,13 +10,13 @@ from torch import nn
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
-from Wavelet_loss import Wavelet_loss
-from denoise import rmse_loss, signal_noise_ratie
+from Wavelet_loss import DenoiserLoss
+from denoise import rmse_loss, signal_noise_rate
 from graphviz import render
 from torchviz import make_dot, make_dot_from_trace
 
 class Trainer:
-    def __init__(self, net, batch_size, name, C, lambda_reg, lr, optimizer='sgd',
+    def __init__(self, net, batch_size, name, wavelet_reg, net_reg, lr, optimizer='adam',
                  best_score=float("inf")):
         """
         The classifier used for training and launching predictions
@@ -24,30 +24,35 @@ class Trainer:
             net (nn.Module): The neural net module containing the definition of your model
             batch_size (int): batch size
             name (string): path to save logs
-            C (float): wavelet regularization
-            lambda_reg(float): l2 regularization
+            wavelet_reg (float): wavelet regularization
+            net_reg(float): l2 regularization
             lr (float): learning rate
         """
         self.net = net
-        for par in net.parameters():
-            print(par)
         self.epochs = None
         self.global_step = 0
         self.epoch_counter = 0
         self.batch_size = batch_size
         self.best_score = best_score
         self.name = os.path.join(name, net.thresholding_algorithm, net.threshold_mode, optimizer,
-                                 'C={}_lambda_reg={}_lr={}'.format(C, lambda_reg, lr))
-        self.C = C
-        self.lambda_reg = lambda_reg
+                                 'wavelet_reg={}_net_reg={}_lr={}_thresholding_parameter={}'.format(wavelet_reg,
+                                                                                                    net_reg,
+                                                                                                    lr,
+                                                                                                    net.thresholding_parameter))
+        self.wavelet_reg = wavelet_reg
+        self.net_reg = net_reg
         self.lr = lr
-        self.criterion = Wavelet_loss(C=self.C, lambda_reg=self.lambda_reg)
+        self.criterion = DenoiserLoss(wavelet_reg=self.wavelet_reg, net_reg=self.net_reg)
+
         if optimizer == 'sgd':
             self.optimizer = optim.SGD(self.net.parameters(), lr=self.lr, momentum=0.9)
-        else:
+        elif optimizer == 'adam':
             self.optimizer = optim.Adam(self.net.parameters(), lr=self.lr)
+        else:
+            raise NotImplementedError('Use "sgd" or "adam" optimizer')
+
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.7,
-                                                              patience=3, verbose=True, threshold=0.001)
+                                                              patience=0, verbose=True, threshold=0.001)
 
         if torch.cuda.is_available():
             self.device_train = torch.device('cuda:0')
@@ -65,8 +70,12 @@ class Trainer:
         hi_f = np.abs(fft(self.net.wavelet.hi[0, 0, :].cpu().data.numpy()))
         lo_f = np.abs(fft(self.net.wavelet.lo[0, 0, :].cpu().data.numpy()))
         n = hi_f.shape[-1]
-        plt.plot(np.arange(n // 2 + 1) / (n // 2), lo_f[:n // 2 + 1])
-        plt.plot(np.arange(n // 2 + 1) / (n // 2), hi_f[:n // 2 + 1])
+        m = np.max([hi_f.max(), lo_f.max()])
+        plt.grid(True)
+        plt.tight_layout()
+        plt.axis([0, 1, 0, m + m * 0.05])
+        plt.plot(np.arange(n // 2 + 1) / (n // 2), lo_f[:n // 2 + 1], 'k--', lw=2)
+        plt.plot(np.arange(n // 2 + 1) / (n // 2), hi_f[:n // 2 + 1], 'k', lw=2)
         buf = io.BytesIO()
         plt.savefig(buf, format='png')
         buf.seek(0)
@@ -82,20 +91,21 @@ class Trainer:
                   ) as pbar:
             for teration, (inputs, targets) in enumerate(train_loader):
                 inputs, targets = inputs.to(self.device_train), targets.to(self.device_train)
+
                 rmse_before = rmse_loss(targets, inputs)
-                snr_before = signal_noise_ratie(targets, inputs)
-                d = make_dot(self.net(inputs), params=dict(self.net.named_parameters()))
-                d.render(format='pdf')
+                snr_before = signal_noise_rate(targets, inputs)
+
                 outputs = self.net(inputs)
-                optimizer.zero_grad()
 
                 loss, wavelet_loss, mse_loss = criterion(outputs, targets, self.net)
 
-                loss.backward(retain_graph=True)
+                loss.backward()
                 optimizer.step()
 
+                optimizer.zero_grad()
+
                 rmse_after = rmse_loss(targets, outputs)
-                snr_after = signal_noise_ratie(targets, outputs)
+                snr_after = signal_noise_rate(targets, outputs)
 
                 self.writer_train.add_scalar("loss", loss.item(), global_step=self.global_step)
                 self.writer_train.add_scalar("Wavelet_loss", wavelet_loss.item(), global_step=self.global_step)
@@ -109,6 +119,9 @@ class Trainer:
                 image = np.array(Image.open(plot_buf))
                 image = np.transpose(image, [2, 0, 1])
                 self.writer_train.add_image("wavelet", image, global_step=self.global_step)
+
+                self.writer_train.add_histogram("threshold", self.net.threshold.threshold,
+                                                global_step=self.global_step)
 
                 self.global_step += 1
                 pbar.set_postfix(OrderedDict(loss='{0:1.5f}'.format(loss.item()),
@@ -127,14 +140,14 @@ class Trainer:
                 inputs, targets = inputs.to(self.device_val), targets.to(self.device_val)
 
                 rmse_before = rmse_loss(targets, inputs)
-                snr_before = signal_noise_ratie(targets, inputs)
+                snr_before = signal_noise_rate(targets, inputs)
 
                 outputs = self.net(inputs)
 
                 _, _, mse_loss = criterion(outputs, targets, self.net)
 
                 rmse_after = rmse_loss(targets, outputs)
-                snr_after = signal_noise_ratie(targets, outputs)
+                snr_after = signal_noise_rate(targets, outputs)
 
                 mean_mse_loss += mse_loss.item()
                 mean_rmse += rmse_after.item()
@@ -192,6 +205,8 @@ class Trainer:
         self.epoch_counter += 1
 
     def evaluate(self, val_loader):
+        self.net.eval()
+        self.net.to(self.device_val)
         mean_val_loss, mean_rmse, mean_snr = self._validate_epoch(iter(val_loader), self.criterion)
         return mean_val_loss, mean_rmse, mean_snr
 

@@ -6,8 +6,8 @@ from wavelets.Wavelet_base import Wavelet_base
 class Wavelet_DWT(Wavelet_base):
     """Class for computing learnable vanilla discrete wavelet transform
     """
-    def __init__(self, num_wavelet_levels, wavelet_size, trainable_wavelets, name=None):
-        super(Wavelet_DWT, self).__init__(num_wavelet_levels, wavelet_size, trainable_wavelets, name=name)
+    def __init__(self, num_wavelet_levels, wavelet_size, trainable_wavelets=False, name=None):
+        super(Wavelet_DWT, self).__init__(num_wavelet_levels, wavelet_size, trainable_wavelets, name)
 
     def decomposition(self, signal):
         if signal.size(2)%2**self.num_wavelet_levels != 0:
@@ -24,10 +24,10 @@ class Wavelet_DWT(Wavelet_base):
         return decomposition  
 
     def reconstruction(self, decomposition):
-        length = decomposition.size(2)//(2**self.num_wavelet_layers)
+        length = decomposition.size(2)//(2**self.num_wavelet_levels)
         end = decomposition.size(2)-length
         reconstruction = decomposition[:, :, -length:]
-        for i in range(self.num_wavelet_layers):
+        for i in range(self.num_wavelet_levels):
             data = decomposition[:, :, end-length:end]
             hi = self.compute_next_level_reconstruction(data, self.hi)
             lo = self.compute_next_level_reconstruction(reconstruction, self.lo)

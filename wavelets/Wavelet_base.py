@@ -18,7 +18,10 @@ class Wavelet_base(nn.Module):
             name (string): initialize filters with names from http://wavelets.pybytes.com/
 
     """
-    def __init__(self, num_wavelet_levels, wavelet_size, trainable_wavelets=False, name=None):
+    def __init__(self, num_wavelet_levels,
+                 wavelet_size,
+                 trainable_wavelets=False,
+                 name=None):
         super(Wavelet_base, self).__init__()
 
         self.name = name

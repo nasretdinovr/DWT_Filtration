@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 class WaveletLoss(nn.Module):
     def __init__(self):
         super(WaveletLoss, self).__init__()
@@ -37,7 +38,7 @@ class WaveletLoss(nn.Module):
         return (wavelet_restriction1 + wavelet_restriction2 + wavelet_restriction3 +
                 wavelet_restriction4 + wavelet_restriction5)
 
-    
+
 class DenoiserLoss(nn.Module):
     def __init__(self, wavelet_reg, net_reg=None):
         super(DenoiserLoss, self).__init__()
@@ -62,7 +63,7 @@ class DenoiserLoss(nn.Module):
                     if 'wavelet' in name:
                         continue
                     else:
-                        l2_reg += torch.norm(param)
+                        l2_reg += param.norm(2)
             regularization += self.net_reg * l2_reg
 
         return speech_loss + regularization, wavelet_loss, speech_loss

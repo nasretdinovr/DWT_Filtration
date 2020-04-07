@@ -21,7 +21,7 @@ class Threshold_DWT(nn.Module):
 
             signal_length (int): length of input signal in points
 
-            wavelet_num_levels (int): number of decomposition levels of wavelet transform
+            num_wavelet_levels (int): number of decomposition levels of wavelet transform
 
             sigma (float): noise variance for using in baseline model
 
@@ -29,8 +29,15 @@ class Threshold_DWT(nn.Module):
             thresholding functions became vanilla.
             For more information - https://pdfs.semanticscholar.org/f81f/a9ab84ddad5e8f8730b4ed7a0879924666b2.pdf
         """
-    def __init__(self, threshold, requires_grad=True, thresholding_algorithm='hard',
-                 mode='global', signal_length=None, wavelet_num_levels=None, sigma=None, thresholding_parameter=0.05):
+
+    def __init__(self, threshold=0.05,
+                 requires_grad=True,
+                 thresholding_algorithm='hard',
+                 mode='global',
+                 signal_length=None,
+                 num_wavelet_levels=None,
+                 sigma=None,
+                 thresholding_parameter=0.05):
         super(Threshold_DWT, self).__init__()
 
         assert thresholding_algorithm in ['hard', 'soft'], \
@@ -41,7 +48,7 @@ class Threshold_DWT(nn.Module):
         self.thresholding_parameter = nn.Parameter(torch.tensor(thresholding_parameter), requires_grad=False)
         self.requires_grad = requires_grad
         self.signal_length = signal_length
-        self.wavelet_num_levels = wavelet_num_levels
+        self.num_wavelet_levels = num_wavelet_levels
         self.sigma = sigma
 
         if self.mode == 'global':
@@ -50,12 +57,12 @@ class Threshold_DWT(nn.Module):
             self.compute_threshold()
         else:
             assert signal_length is not None, "level_dependent mode requires: signal_length"
-            assert wavelet_num_levels is not None, "level_dependent mode requires: num_layers"
+            assert num_wavelet_levels is not None, "level_dependent mode requires: num_wavelet_levels"
 
-            if self.signal_length % 2 ** self.num_layers != 0:
-                self.signal_length += 2 ** self.num_layers - (self.signal_length % 2 ** self.num_layers)
-            threshold = self.compute_level_threshold(self.num_layers)
-            self.threshold = nn.Parameter(torch.ones((2 ** self.num_layers, 1))*threshold,
+            if self.signal_length % 2 ** self.num_wavelet_levels != 0:
+                self.signal_length += 2 ** self.num_wavelet_levels - (self.signal_length % 2 ** self.num_wavelet_levels)
+            threshold = self.compute_level_threshold(self.num_wavelet_levels)
+            self.threshold = nn.Parameter(torch.ones((2 ** self.num_wavelet_levels, 1))*threshold,
                                           requires_grad=self.requires_grad)
 
 
@@ -67,7 +74,7 @@ class Threshold_DWT(nn.Module):
         self.threshold.data.fill_(self.sigma * math.sqrt(2 * math.log(self.signal_length)))
 
     def compute_level_threshold(self, level):
-        return self.sigma * math.sqrt(2 * math.log(self.signal_length))/math.log2(self.num_layers)
+        return self.sigma * math.sqrt(2 * math.log(self.signal_length))/math.log2(self.num_wavelet_levels)
     
     def soft(self, x):
         labmda = self.thresholding_parameter
@@ -83,7 +90,7 @@ class Threshold_DWT(nn.Module):
     
     def forward(self, x):
         if self.mode == 'level_dependent':
-            x = x.reshape(x.size(0), x.size(1), 2 ** self.num_layers, -1)
+            x = x.reshape(x.size(0), x.size(1), 2 ** self.num_wavelet_levels, -1)
 
             if self.thresholding_algorithm == 'hard':
                 x = self.hard(x)

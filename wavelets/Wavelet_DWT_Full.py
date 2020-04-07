@@ -8,8 +8,8 @@ from wavelets.Wavelet_base import Wavelet_base
 class Wavelet_DWT_Full(Wavelet_base):
     """Class for computing learnable discrete wavelet transform for full filterbank
     """
-    def __init__(self, num_wavelet_levels, wavelet_size, trainable_wavelets, name):
-        super(Wavelet_DWT_Full, self).__init__(num_wavelet_levels, wavelet_size, trainable_wavelets, name=name)
+    def __init__(self, num_wavelet_levels, wavelet_size, trainable_wavelets=False, name=None):
+        super(Wavelet_DWT_Full, self).__init__(num_wavelet_levels, wavelet_size, trainable_wavelets, name)
 
     def decomposition_step(self, signal, wavelet_level):
         signal_hi = self.compute_next_level_decomposition(signal, self.hi)
